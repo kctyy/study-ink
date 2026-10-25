@@ -163,6 +163,61 @@ def parse_model_json(text):
     }
 
 
+def write_a4_pages(writer, text, width=1240, height=1754, size=40, paper="lined"):
+    """Splits text into A4 page chunks with proper line height margins."""
+    lines = text.splitlines()
+
+    # Calculate line capacity per page based on font size
+    line_height = max(30, int(size * 1.5))
+    top_bottom_margin = 160
+    usable_height = height - top_bottom_margin
+    max_lines_per_page = max(1, usable_height // line_height)
+
+    # Wrap long lines so they don't overflow the page vertically
+    wrapped_lines = []
+    max_chars = max(20, int(width / (size * 0.55)))
+    for line in lines:
+        if not line.strip():
+            wrapped_lines.append("")
+            continue
+        while len(line) > max_chars:
+            # Wrap at nearest space if possible
+            space_idx = line.rfind(" ", 0, max_chars)
+            if space_idx > 0:
+                wrapped_lines.append(line[:space_idx])
+                line = line[space_idx + 1 :]
+            else:
+                wrapped_lines.append(line[:max_chars])
+                line = line[max_chars:]
+        wrapped_lines.append(line)
+
+    pages = []
+    current_chunk = []
+
+    for line in wrapped_lines:
+        current_chunk.append(line)
+        if len(current_chunk) >= max_lines_per_page:
+            img = writer.write(
+                "\n".join(current_chunk),
+                width=width,
+                size=size,
+                paper=paper,
+            )
+            pages.append(img)
+            current_chunk = []
+
+    if current_chunk or not pages:
+        img = writer.write(
+            "\n".join(current_chunk or [""]),
+            width=width,
+            size=size,
+            paper=paper,
+        )
+        pages.append(img)
+
+    return pages
+
+
 def analyze_slide(image_bytes, media_type, model, extra_instructions="", current_diagram=None,
                   simplify_complex=False):
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -483,11 +538,41 @@ class H(BaseHTTPRequestHandler):
             elif self.path == "/render":
                 render_text = str(data.get("text", ""))
                 if data.get("active_recall"):
-                    render_text = apply_active_recall(render_text, data.get("seed", 7))
-                image = Writer(get_font(data["profile"]), ink=hex_to_rgb(data["ink"]),
-                               seed=data["seed"], neatness=float(data["neatness"])).write(
-                    render_text, width=int(data["width"]), size=float(data["size"]), paper=data["paper"])
+                    render_text = apply_active_recall(
+                        render_text, data.get("seed", 7)
+                    )
+
+                profile_name = data.get("profile", "trisha_full")
+                ink_color = hex_to_rgb(data.get("ink", "#0a5a28"))
+                seed_val = int(data.get("seed", 7))
+                neatness_val = float(data.get("neatness", 0.5))
+
+                writer = Writer(
+                    get_font(profile_name),
+                    ink=ink_color,
+                    seed=seed_val,
+                    neatness=neatness_val,
+                )
+
+                # Render continuous single image matching requested container width
+                page_width = int(data.get("width", 1400))
+                page_size = float(data.get("size", 40))
+                paper_style = data.get("paper", "lined")
+
+                image = writer.write(
+                    render_text,
+                    width=page_width,
+                    size=page_size,
+                    paper=paper_style,
+                )
                 output = png_bytes(image)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(output)))
+                self.end_headers()
+                self.wfile.write(output)
+                return
             else:
                 self.send_error(404)
                 return
