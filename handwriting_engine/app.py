@@ -152,6 +152,60 @@ def parse_model_json(text):
         "strokes": strokes,
     }
 
+def write_a4_pages(writer, text, width=1240, height=1754, size=40, paper="lined"):
+    """Splits text into A4 page chunks with proper line height margins."""
+    lines = text.splitlines()
+
+    # Calculate line capacity per page based on font size
+    line_height = max(30, int(size * 1.5))
+    top_bottom_margin = 160
+    usable_height = height - top_bottom_margin
+    max_lines_per_page = max(1, usable_height // line_height)
+
+    # Wrap long lines so they don't overflow the page vertically
+    wrapped_lines = []
+    max_chars = max(20, int(width / (size * 0.55)))
+    for line in lines:
+        if not line.strip():
+            wrapped_lines.append("")
+            continue
+        while len(line) > max_chars:
+            # Wrap at nearest space if possible
+            space_idx = line.rfind(" ", 0, max_chars)
+            if space_idx > 0:
+                wrapped_lines.append(line[:space_idx])
+                line = line[space_idx + 1 :]
+            else:
+                wrapped_lines.append(line[:max_chars])
+                line = line[max_chars:]
+        wrapped_lines.append(line)
+
+    pages = []
+    current_chunk = []
+
+    for line in wrapped_lines:
+        current_chunk.append(line)
+        if len(current_chunk) >= max_lines_per_page:
+            img = writer.write(
+                "\n".join(current_chunk),
+                width=width,
+                size=size,
+                paper=paper,
+            )
+            pages.append(img)
+            current_chunk = []
+
+    if current_chunk or not pages:
+        img = writer.write(
+            "\n".join(current_chunk or [""]),
+            width=width,
+            size=size,
+            paper=paper,
+        )
+        pages.append(img)
+
+    return pages
+
 
 def analyze_slide(image_bytes, media_type, model, extra_instructions="", current_diagram=None,
                   simplify_complex=False):
@@ -454,24 +508,24 @@ class H(BaseHTTPRequestHandler):
                     neatness=neatness_val,
                 )
 
-                page_width = int(data.get("width", 1240))
+                # Render continuous single image matching requested container width
+                page_width = int(data.get("width", 1400))
                 page_size = float(data.get("size", 40))
                 paper_style = data.get("paper", "lined")
 
-                pages = write_a4_pages(
-                    writer,
+                image = writer.write(
                     render_text,
                     width=page_width,
-                    height=1754,
                     size=page_size,
                     paper=paper_style,
                 )
+                output = png_bytes(image)
 
-                encoded_pages = [
-                    base64.b64encode(png_bytes(p)).decode("ascii")
-                    for p in pages
-                ]
-                self.send_json(200, {"pages": encoded_pages})
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(output)))
+                self.end_headers()
+                self.wfile.write(output)
                 return
             else:
                 self.send_error(404)
