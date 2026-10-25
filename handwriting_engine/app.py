@@ -9,12 +9,14 @@ import tempfile
 import urllib.error
 import urllib.request
 from html import escape
+from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from PIL import Image
 
 from handwriting import DiagramWriter, HandwritingFont, Writer
+from handwriting import onboarding
 from extractor import extract_text_from_file
 from studyalong.export import to_pdf
 from studyalong.grade import grade_ink_png, grade_text
@@ -60,6 +62,14 @@ def get_font(name):
             raise ValueError("Unknown handwriting profile")
         _cache[name] = HandwritingFont.load(str(PROFILES_DIR / name))
     return _cache[name]
+
+
+def list_profiles():
+    """Every profile folder, flagged when it was created through the in-app upload flow."""
+    if not PROFILES_DIR.is_dir():
+        return []
+    return [{"name": p.name, "custom": (p / onboarding.MARKER).is_file()}
+            for p in sorted(PROFILES_DIR.iterdir()) if (p / "meta.json").is_file()]
 
 
 def hex_to_rgb(value):
@@ -263,8 +273,31 @@ class H(BaseHTTPRequestHandler):
             raise ValueError("Request is too large")
         return json.loads(self.rfile.read(size))
 
+    def send_bytes(self, content_type, body, filename=None):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        split = urlsplit(self.path)
+        path = split.path
+        if path in {"/handwriting/template.png", "/handwriting/template.pdf"}:
+            kind = parse_qs(split.query).get("kind", ["full"])[0]
+            try:
+                if path.endswith(".png"):
+                    self.send_bytes("image/png", onboarding.template_png_bytes(kind), f"study-ink-template-{kind}.png")
+                else:
+                    self.send_bytes("application/pdf", onboarding.template_pdf_bytes(kind), f"study-ink-template-{kind}.pdf")
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            return
+        if path == "/handwriting/profiles":
+            self.send_json(200, {"profiles": list_profiles()})
+            return
         if path == "/study/lessons":
             self.send_json(200, {"lessons": list_lessons()})
             return
@@ -295,7 +328,7 @@ class H(BaseHTTPRequestHandler):
         if path not in {"/", "/index.html"}:
             self.send_error(404)
             return
-        profiles = sorted(p.name for p in PROFILES_DIR.iterdir() if (p / "meta.json").is_file())
+        profiles = [p["name"] for p in list_profiles()]
         options = "".join(f'<option value="{escape(p)}"{" selected" if p == "trisha_full" else ""}>{escape(p)}</option>' for p in profiles)
         page = APP_HTML.read_text(encoding="utf-8").replace("__PROFILES__", options).encode("utf-8")
         self.send_response(200)
@@ -307,6 +340,18 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             data = self.read_json()
+            if self.path == "/handwriting/upload":
+                image_bytes = base64.b64decode(data.get("image_base64", ""), validate=True)
+                if not image_bytes or len(image_bytes) > MAX_IMAGE_BYTES:
+                    raise ValueError("The sheet image must be under 10 MB")
+                kind = str(data.get("kind", "full"))
+                result = onboarding.build_profile(image_bytes, str(data.get("name", "")), kind, str(PROFILES_DIR))
+                _cache.pop(result["profile"], None)
+                result["preview_b64"] = base64.b64encode(
+                    onboarding.preview_png_bytes(str(PROFILES_DIR / result["profile"]))).decode("ascii")
+                result["profiles"] = list_profiles()
+                self.send_json(200, result)
+                return
             if self.path == "/study/render":
                 rendered = render_study_lesson(data)
                 self.send_json(200, {

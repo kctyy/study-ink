@@ -35,6 +35,21 @@ review dense scientific diagrams for missed labels or bonds. **Simplify automati
 if the diagram is too dense** lets Claude abstract low-level detail while keeping the
 central components, key labels, and important relationships.
 
+### Add your own handwriting (in-app popup)
+Click **Use my handwriting** in the header (it also opens automatically on a first visit until you add a profile or
+choose "Not now"). The popup walks through three steps:
+
+1. **Get the sheet** - choose the *full* sheet (letters, capitals, digits, punctuation, two samples each) or the *quick*
+   sheet (a-z / A-Z, one sample each), then download it as a PNG (tablet) or a PDF (print).
+2. **Upload it** - name your handwriting and upload a photo, scan or exported PNG of the filled-in sheet. Photos are
+   straightened (up to about 6 degrees of tilt), evened out for shadows, and shrunk before the glyphs are extracted.
+   Nothing is sent to Claude; this step runs locally.
+3. **Try it out** - see a sample in your handwriting, then **Use this handwriting** to select it in every tab.
+
+New profiles are saved in `profiles/<name>/` and marked with `user_upload.json`, so re-uploading under the same name
+replaces them while the built-in profiles are protected. Endpoints: `GET /handwriting/template.png|pdf?kind=full|letters`,
+`GET /handwriting/profiles`, `POST /handwriting/upload`. The logic lives in `handwriting/onboarding.py`.
+
 For template creation and profile extraction, use the CLI below:
 
     pip install -r requirements.txt

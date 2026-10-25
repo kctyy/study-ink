@@ -14,7 +14,7 @@
 </style>
 </head>
 <body>
-<header><div class="brand">Handwriting Studio</div><nav class="tabs"><button class="tab active" data-view="slide-view">Slide → diagram</button><button class="tab" data-view="text-view">Text → handwriting</button><button class="tab" data-view="study-view">Study Along</button></nav></header>
+<header><div class="brand">Handwriting Studio</div><nav class="tabs"><button class="tab active" data-view="slide-view">Slide → diagram</button><button class="tab" data-view="text-view">Text → handwriting</button><button class="tab" data-view="study-view">Study Along</button></nav><button class="secondary ob-open" id="open-onboarding" type="button">Use my handwriting</button></header>
 <main>
   <section class="view active" id="slide-view">
     <div class="intro"><h1>Turn a lecture slide into an ink diagram</h1><p>Upload a slide, extract its study notes, and redraw the diagram with handwritten glyphs and strokes. Print the combined study sheet to PDF for Notability.</p></div>
@@ -506,6 +506,256 @@ Dijkstra's #1 rule: never use negative weights!</textarea></div>
     const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=studyLessonId+".json";link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
   });
   window.addEventListener("resize",layoutStudyPage);
+</script>
+<style>
+  [hidden]{display:none!important}
+  .ob-open{margin-left:auto}
+  .ob-overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(32,40,33,.5)}
+  .ob-dialog{width:min(720px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:16px;padding:22px 24px;box-shadow:0 18px 50px #1b2a2150;color:#202821}
+  .ob-dialog:focus{outline:none}
+  .ob-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .ob-top h2{margin:0 0 4px;font-size:22px;letter-spacing:-.02em}
+  .ob-close{background:transparent;color:#65736a;padding:4px 10px;font-size:22px;line-height:1;border-radius:8px}
+  .ob-close:hover{background:#eaf0eb}
+  .ob-lede{margin:0 0 14px;color:#68766d;line-height:1.5}
+  .ob-steps{display:flex;gap:6px;margin:0 0 16px;padding:0;list-style:none;font-size:12px;font-weight:700;color:#8a968e}
+  .ob-steps li{flex:1;padding:6px 8px;border-radius:8px;background:#f1f4f1}
+  .ob-steps li.current{background:#eaf0eb;color:#253b30}
+  .ob-steps li.done{color:#365d47}
+  fieldset.ob-kinds{border:0;margin:0 0 14px;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  fieldset.ob-kinds legend{font-size:12px;font-weight:700;color:#65736a;margin-bottom:6px;padding:0}
+  .ob-opt{display:block;border:1px solid #d7e0d8;border-radius:10px;padding:12px;cursor:pointer;line-height:1.4}
+  .ob-opt.selected{border-color:#365d47;background:#f1f6f2;box-shadow:0 0 0 1px #365d47}
+  .ob-opt input{margin-right:6px;accent-color:#365d47}
+  .ob-opt strong{font-size:14px}.ob-opt span{display:block;font-size:12.5px;color:#68766d;margin-top:3px}
+  .ob-downloads{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  a.ob-btn{display:inline-block;text-decoration:none;border-radius:9px;padding:10px 14px;background:#293e34;color:#fff;font-weight:650}
+  a.ob-btn.secondary{background:#e8ede8;color:#293e34;border:1px solid #d3ddd4}
+  .ob-tips{margin:0 0 6px;padding-left:20px;color:#38483d;line-height:1.55;font-size:14px}
+  .ob-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .ob-foot .right{display:flex;gap:8px;margin-left:auto}
+  .ob-link{background:none;color:#65736a;padding:6px 4px;font-weight:600;text-decoration:underline}
+  .ob-thumb{max-width:100%;max-height:200px;margin-top:10px;border-radius:8px;border:1px solid #e1e7e1}
+  .ob-error{margin-top:12px;padding:10px 12px;border-radius:9px;background:#fdf1ec;border:1px solid #f0c9b8;color:#8a3a17;font-size:13.5px;line-height:1.45}
+  .ob-note{margin-top:12px;padding:10px 12px;border-radius:9px;background:#f4f7f2;border:1px solid #dfe7de;color:#38483d;font-size:13.5px;line-height:1.45}
+  .ob-result{width:100%;border:1px solid #e1e7e1;border-radius:10px;margin:6px 0 4px;display:block}
+  @media(max-width:600px){fieldset.ob-kinds{grid-template-columns:1fr}.ob-dialog{padding:18px 16px}}
+</style>
+
+<div class="ob-overlay" id="ob-modal" hidden>
+  <div class="ob-dialog" role="dialog" aria-modal="true" aria-labelledby="ob-title" tabindex="-1" id="ob-dialog">
+    <div class="ob-top">
+      <div><h2 id="ob-title">Write in your own handwriting</h2>
+        <p class="ob-lede">Fill in a one-time sheet with a pen, upload it, and everything you generate is built from your real strokes.</p></div>
+      <button class="ob-close" id="ob-close" aria-label="Close" type="button">&times;</button>
+    </div>
+    <ol class="ob-steps" id="ob-steps" aria-label="Progress">
+      <li data-step="1">1 · Get the sheet</li><li data-step="2">2 · Upload it</li><li data-step="3">3 · Try it out</li>
+    </ol>
+
+    <section id="ob-step-1">
+      <fieldset class="ob-kinds">
+        <legend>Choose a sheet</legend>
+        <label class="ob-opt selected"><input type="radio" name="ob-kind" value="full" checked><strong>Full sheet · recommended</strong>
+          <span>Letters, capitals, digits and punctuation, two samples of each so repeated letters vary. Roughly 10 minutes.</span></label>
+        <label class="ob-opt"><input type="radio" name="ob-kind" value="letters"><strong>Quick sheet</strong>
+          <span>Just a–z and A–Z, one sample each. Digits and symbols use plain stand-ins. Roughly 3 minutes.</span></label>
+      </fieldset>
+      <div class="ob-downloads">
+        <a class="ob-btn" id="ob-dl-png" href="/handwriting/template.png?kind=full" download>Download PNG · iPad or tablet</a>
+        <a class="ob-btn secondary" id="ob-dl-pdf" href="/handwriting/template.pdf?kind=full" download>Download PDF · print it</a>
+      </div>
+      <ul class="ob-tips">
+        <li>Write one character per box, sitting on the dashed line, with a dark pen or Pencil. Tails of g, j, p, q and y can dip into the shaded strip below it.</li>
+        <li>Fill in <strong>every</strong> box and keep each character from touching its box edges or its neighbours.</li>
+        <li>Write only on the sheet. Extra marks or notes confuse the reader.</li>
+        <li>Printed it? Photograph or scan it flat in good light. A slightly tilted or shadowed photo is fine.</li>
+      </ul>
+    </section>
+
+    <section id="ob-step-2" hidden>
+      <div class="field"><label for="ob-name">Name this handwriting</label><input id="ob-name" type="text" maxlength="40" value="my-handwriting" autocomplete="off"></div>
+      <div class="drop" id="ob-drop" style="margin-top:12px">
+        <strong id="ob-drop-title">Choose your filled-in sheet</strong>
+        <input id="ob-file" type="file" accept="image/png,image/jpeg,image/webp">
+        <span class="small" id="ob-file-name">PNG or JPEG · up to 10 MB · must be the <span id="ob-kind-label">full</span> sheet</span>
+        <img class="ob-thumb" id="ob-thumb" alt="Preview of your uploaded sheet" hidden>
+      </div>
+      <p class="small" style="margin:10px 0 0">Your sheet is processed by the app running on this computer. It isn’t sent to Claude.</p>
+      <div class="ob-error" id="ob-error" role="alert" hidden></div>
+    </section>
+
+    <section id="ob-step-3" hidden>
+      <p class="ob-lede" style="margin-bottom:8px">Here’s a sample written with your handwriting.</p>
+      <img class="ob-result" id="ob-result" alt="Sample text rendered in your handwriting" hidden>
+      <div class="ob-note" id="ob-note" hidden></div>
+    </section>
+
+    <div class="status" id="ob-status" role="status" aria-live="polite"></div>
+    <div class="ob-foot">
+      <button class="ob-link" id="ob-skip" type="button">Not now</button>
+      <div class="right">
+        <button class="secondary" id="ob-back" type="button" hidden>Back</button>
+        <button id="ob-next" type="button">I have my sheet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const SEEN_KEY = "studyink.onboarding.dismissed";
+  const MAX_UPLOAD_EDGE = 2400, MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+  const KIND_LABELS = {full: "full", letters: "quick"};
+  let step = 1, kind = "full", file = null, builtProfile = null, lastFocus = null, busy = false;
+
+  const remember = () => { try { localStorage.setItem(SEEN_KEY, "1"); } catch (_) {} };
+  const hasSeen = () => { try { return localStorage.getItem(SEEN_KEY) === "1"; } catch (_) { return false; } };
+
+  function setError(message) { $("ob-error").textContent = message || ""; $("ob-error").hidden = !message; }
+
+  function render() {
+    for (let i = 1; i <= 3; i++) $("ob-step-" + i).hidden = i !== step;
+    document.querySelectorAll("#ob-steps li").forEach(li => {
+      const n = +li.dataset.step;
+      li.classList.toggle("current", n === step); li.classList.toggle("done", n < step);
+      if (n === step) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+    });
+    $("ob-back").hidden = step !== 2;
+    $("ob-next").textContent = step === 1 ? "I have my sheet" : step === 2 ? "Build my handwriting" : "Use this handwriting";
+    $("ob-next").disabled = busy || (step === 2 && !file);
+    $("ob-skip").textContent = step === 3 ? "Try another sheet" : "Not now";
+    $("ob-kind-label").textContent = KIND_LABELS[kind];
+  }
+
+  function open() {
+    lastFocus = document.activeElement;
+    step = 1; file = null; builtProfile = null; busy = false; setError(""); $("ob-status").textContent = "";
+    $("ob-file").value = ""; $("ob-thumb").hidden = true;
+    $("ob-file-name").firstChild.textContent = "PNG or JPEG · up to 10 MB · must be the ";
+    $("ob-modal").hidden = false; render(); $("ob-dialog").focus();
+  }
+  function close(dismissed) {
+    if (dismissed) remember();
+    $("ob-modal").hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  document.querySelectorAll('input[name="ob-kind"]').forEach(radio => radio.addEventListener("change", () => {
+    kind = radio.value;
+    document.querySelectorAll(".ob-opt").forEach(l => l.classList.toggle("selected", l.querySelector("input").checked));
+    $("ob-dl-png").href = "/handwriting/template.png?kind=" + kind;
+    $("ob-dl-pdf").href = "/handwriting/template.pdf?kind=" + kind;
+    render();
+  }));
+
+  $("ob-file").addEventListener("change", () => {
+    file = $("ob-file").files[0] || null; setError("");
+    if (file) {
+      $("ob-file-name").firstChild.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB · must be the `;
+      const url = URL.createObjectURL(file);
+      $("ob-thumb").src = url; $("ob-thumb").hidden = false;
+      $("ob-thumb").onload = () => URL.revokeObjectURL(url);
+    }
+    render();
+  });
+  $("ob-drop").addEventListener("dragover", e => e.preventDefault());
+  $("ob-drop").addEventListener("drop", e => {
+    e.preventDefault();
+    const dropped = Array.from(e.dataTransfer?.files || []).find(f => f.type.startsWith("image/"));
+    if (!dropped) return;
+    const t = new DataTransfer(); t.items.add(dropped); $("ob-file").files = t.files;
+    $("ob-file").dispatchEvent(new Event("change", {bubbles: true}));
+  });
+
+  // Phone photos can be huge; shrink before upload so they stay well under the server limit.
+  async function readyForUpload(f) {
+    let bitmap = null;
+    try { bitmap = await createImageBitmap(f, {imageOrientation: "from-image"}); } catch (_) { /* let the server try */ }
+    const oversize = f.size > MAX_UPLOAD_BYTES || (bitmap && Math.max(bitmap.width, bitmap.height) > 4000);
+    if (!bitmap || !oversize) { if (bitmap) bitmap.close(); return f; }
+    const scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+    return await new Promise(resolve => canvas.toBlob(b => resolve(b || f), "image/jpeg", 0.92));
+  }
+  const toBase64 = blob => new Promise((resolve, reject) => {
+    const r = new FileReader(); r.onload = () => resolve(String(r.result).split(",")[1]); r.onerror = reject; r.readAsDataURL(blob);
+  });
+
+  function refreshProfileSelects(profiles, choose) {
+    for (const id of ["profile", "text-profile", "study-profile"]) {
+      const sel = $(id); if (!sel) continue;
+      const current = sel.value;
+      sel.replaceChildren(...profiles.map(p => new Option(p.name, p.name)));
+      sel.value = choose && profiles.some(p => p.name === choose) ? choose : current;
+    }
+  }
+
+  async function build() {
+    const name = $("ob-name").value.trim();
+    if (!name) { setError("Give your handwriting a name first."); $("ob-name").focus(); return; }
+    busy = true; setError(""); render(); $("ob-status").textContent = "Reading your handwriting…";
+    try {
+      const upload = await readyForUpload(file);
+      const response = await fetch("/handwriting/upload", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name, kind, image_base64: await toBase64(upload)})});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Something went wrong reading that sheet.");
+      builtProfile = data.profile;
+      refreshProfileSelects(data.profiles, null);
+      $("ob-result").src = "data:image/png;base64," + data.preview_b64; $("ob-result").hidden = false;
+      const notes = [];
+      if (data.kind === "letters") notes.push("Digits and punctuation use plain stand-in strokes. Fill in a full sheet later for those to match too.");
+      if (data.flagged && data.flagged.length) notes.push(`${data.flagged.length} character${data.flagged.length === 1 ? " looks" : "s look"} unusually inconsistent between samples. If any letters in the sample look off, redo that sheet with a bit more care.`);
+      $("ob-note").textContent = notes.join(" "); $("ob-note").hidden = !notes.length;
+      step = 3; $("ob-status").textContent = "";
+    } catch (err) {
+      setError(err.message); $("ob-status").textContent = "";
+    } finally { busy = false; render(); }
+  }
+
+  function useIt() {
+    refreshProfileSelects(Array.from($("profile").options).map(o => ({name: o.value})), builtProfile);
+    // Study Along re-renders on change; only nudge it once it has been opened, otherwise it reads the value on first open.
+    if ($("study-view").classList.contains("active")) $("study-profile").dispatchEvent(new Event("change", {bubbles: true}));
+    remember(); close(false);
+  }
+
+  $("ob-next").addEventListener("click", () => {
+    if (busy) return;
+    if (step === 1) { step = 2; setError(""); render(); $("ob-name").focus(); }
+    else if (step === 2) build();
+    else useIt();
+  });
+  $("ob-back").addEventListener("click", () => { step = 1; setError(""); render(); });
+  $("ob-skip").addEventListener("click", () => {
+    if (step === 3) { step = 1; file = null; $("ob-file").value = ""; $("ob-thumb").hidden = true; $("ob-result").hidden = true; render(); }
+    else close(true);
+  });
+  $("ob-close").addEventListener("click", () => close(true));
+  $("ob-modal").addEventListener("mousedown", e => { if (e.target === $("ob-modal")) close(true); });
+  $("ob-modal").addEventListener("keydown", e => {
+    if (e.key === "Escape") { close(true); return; }
+    if (e.key !== "Tab") return;
+    const items = Array.from($("ob-dialog").querySelectorAll("a[href],button,input,select,textarea"))
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === $("ob-dialog"))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  $("open-onboarding").addEventListener("click", open);
+
+  // First visit: invite the student to add their handwriting, unless they already have or have said no.
+  if (!hasSeen()) {
+    fetch("/handwriting/profiles").then(r => r.json()).then(d => {
+      if (!(d.profiles || []).some(p => p.custom)) open();
+    }).catch(() => {});
+  }
+})();
 </script>
 </body>
 </html>
