@@ -1,4 +1,4 @@
-# Handwriting engine
+# Study Ink
 
 Typed text in, the student's own handwriting out. No image generation: the output is built from the
 student's real pen strokes, so the words are always exactly the words you typed.
