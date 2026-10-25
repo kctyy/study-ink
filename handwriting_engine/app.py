@@ -438,11 +438,41 @@ class H(BaseHTTPRequestHandler):
             elif self.path == "/render":
                 render_text = str(data.get("text", ""))
                 if data.get("active_recall"):
-                    render_text = apply_active_recall(render_text, data.get("seed", 7))
-                image = Writer(get_font(data["profile"]), ink=hex_to_rgb(data["ink"]),
-                               seed=data["seed"], neatness=float(data["neatness"])).write(
-                    render_text, width=int(data["width"]), size=float(data["size"]), paper=data["paper"])
-                output = png_bytes(image)
+                    render_text = apply_active_recall(
+                        render_text, data.get("seed", 7)
+                    )
+
+                profile_name = data.get("profile", "trisha_full")
+                ink_color = hex_to_rgb(data.get("ink", "#0a5a28"))
+                seed_val = int(data.get("seed", 7))
+                neatness_val = float(data.get("neatness", 0.5))
+
+                writer = Writer(
+                    get_font(profile_name),
+                    ink=ink_color,
+                    seed=seed_val,
+                    neatness=neatness_val,
+                )
+
+                page_width = int(data.get("width", 1240))
+                page_size = float(data.get("size", 40))
+                paper_style = data.get("paper", "lined")
+
+                pages = write_a4_pages(
+                    writer,
+                    render_text,
+                    width=page_width,
+                    height=1754,
+                    size=page_size,
+                    paper=paper_style,
+                )
+
+                encoded_pages = [
+                    base64.b64encode(png_bytes(p)).decode("ascii")
+                    for p in pages
+                ]
+                self.send_json(200, {"pages": encoded_pages})
+                return
             else:
                 self.send_error(404)
                 return
