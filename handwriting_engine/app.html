@@ -74,7 +74,11 @@ Dijkstra's #1 rule: never use negative weights!</textarea></div>
       <div class="controls" style="grid-template-columns:1fr 1fr"><div class="field"><label for="text-neat">Neatness <span id="text-neat-value">0.5</span></label><input id="text-neat" type="range" min="0" max="1" step="0.05" value="0.5"></div><div class="field"><label for="text-size">Size</label><input id="text-size" type="number" min="20" max="120" value="58"></div><div class="field"><label for="text-paper">Paper</label><select id="text-paper"><option>lined</option><option>grid</option><option>white</option><option>none</option></select></div><div class="field"><label for="text-ink">Ink</label><input id="text-ink" type="color" value="#0a5a28"></div></div>
       <div class="field" style="margin-top:8px"><label><input id="active-recall" type="checkbox" style="width:auto"> Smart Quick Mode · fill in the blanks</label><span class="small">Automatically hides about 25% of key terms. Re-roll to make a different worksheet.</span></div>
       <div class="action-row"><button id="render-text">Render text</button><button class="secondary" id="reroll-text">Re-roll variation</button><span id="text-status" class="status"></span></div>
-    </div><div class="preview"><span id="text-empty">Your handwriting preview will appear here.</span><img id="text-preview" alt="Rendered handwriting" hidden></div></div>
+    </div>
+    <div class="text-preview-container" id="text-preview-container">
+      <span id="text-empty">Your handwriting pages will appear here.</span>
+    </div>
+  </div>
   </section>
 
   <section class="view" id="study-view">
@@ -299,10 +303,68 @@ Dijkstra's #1 rule: never use negative weights!</textarea></div>
   });
   $("download-diagram").addEventListener("click", () => { if (!diagramPngUrl) return; const a=document.createElement("a"); a.href=diagramPngUrl; a.download="handwritten-diagram.png"; a.click(); });
   async function renderText() {
-    $("text-status").textContent = "Rendering…";
-    const body = {profile:$("text-profile").value, text:$("text-input").value, active_recall:$("active-recall").checked, neatness:+$("text-neat").value, size:+$("text-size").value, paper:$("text-paper").value, ink:$("text-ink").value, seed:textSeed, width:1500};
-    try { const r=await fetch("/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await r.text()); showImage($("text-preview"),$("text-empty"),URL.createObjectURL(await r.blob())); $("text-status").textContent=""; }
-    catch(error) { $("text-status").textContent=error.message; }
+    $("text-status").textContent = "Rendering pages…";
+    const body = {
+      profile: $("text-profile").value,
+      text: $("text-input").value,
+      active_recall: $("active-recall").checked,
+      neatness: +$("text-neat").value,
+      size: +$("text-size").value,
+      paper: $("text-paper").value,
+      ink: $("text-ink").value,
+      seed: textSeed
+    };
+
+    try {
+      const r = await fetch("/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      
+      const data = await r.json();
+      const container = $("text-preview-container");
+      container.replaceChildren();
+
+      if (!data.pages || !data.pages.length) {
+        container.innerHTML = '<span id="text-empty">No pages rendered.</span>';
+        $("text-status").textContent = "";
+        return;
+      }
+
+      data.pages.forEach((pageB64, index) => {
+        const card = document.createElement("div");
+        card.className = "a4-page-card";
+
+        const img = document.createElement("img");
+        img.src = `data:image/png;base64,${pageB64}`;
+        img.alt = `Page ${index + 1}`;
+
+        const footer = document.createElement("div");
+        footer.className = "a4-page-footer";
+        footer.innerHTML = `<span>Page ${index + 1} of ${data.pages.length}</span>`;
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.className = "secondary";
+        downloadBtn.textContent = `Download Page ${index + 1} (PNG)`;
+        downloadBtn.onclick = () => {
+          const a = document.createElement("a");
+          a.href = img.src;
+          a.download = `handwritten_page_${index + 1}.png`;
+          a.click();
+        };
+
+        footer.appendChild(downloadBtn);
+        card.appendChild(img);
+        card.appendChild(footer);
+        container.appendChild(card);
+      });
+
+      $("text-status").textContent = `Rendered ${data.pages.length} A4 page(s).`;
+    } catch (error) {
+      $("text-status").textContent = error.message;
+    }
   }
   $("render-text").addEventListener("click", renderText);
   $("active-recall").addEventListener("change", renderText);
